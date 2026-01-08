@@ -1,0 +1,36 @@
+# ConfigMap - 存儲非敏感的配置數據
+# 將配置與應用程式代碼分離，便於管理和更新
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: my-app-config
+  namespace: my-app
+  labels:
+    app: my-app
+data:
+  # 簡單的鍵值對配置
+  APP_NAME: "My Awesome App"
+  APP_ENV: "development"
+  LOG_LEVEL: "info"
+  
+  # 也可以存儲配置文件內容
+  app.properties: |
+    server.port=8080
+    server.host=0.0.0.0
+    database.pool.size=10
+    cache.enabled=true
+  
+  # JSON 格式配置
+  settings.json: |
+    {
+      "features": {
+        "feature1": true,
+        "feature2": false
+      },
+      "limits": {
+        "maxUsers": 100,
+        "maxRequests": 1000
+      }
+    }
+

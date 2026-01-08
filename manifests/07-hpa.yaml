@@ -1,0 +1,132 @@
+# HorizontalPodAutoscaler (HPA) - 水平自動擴展
+# 根據 CPU、內存或自定義指標自動調整 Pod 數量
+
+# 前置需求：
+# 1. 安裝 Metrics Server（用於收集資源指標）
+#    kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+#
+# 2. 對於 Minikube：
+#    minikube addons enable metrics-server
+#
+# 3. 驗證 Metrics Server：
+#    kubectl top nodes
+#    kubectl top pods -n my-app
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: my-app-hpa
+  namespace: my-app
+  labels:
+    app: my-app
+spec:
+  # 目標 Deployment
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: my-app
+  
+  # Pod 數量範圍
+  minReplicas: 2    # 最小副本數
+  maxReplicas: 10   # 最大副本數
+  
+  # 擴展指標
+  metrics:
+  # CPU 使用率
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        # 當平均 CPU 使用率超過 70% 時擴展
+        averageUtilization: 70
+  
+  # 內存使用率
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        # 當平均內存使用率超過 80% 時擴展
+        averageUtilization: 80
+  
+  # 擴展行為配置（可選，v2 版本支持）
+  behavior:
+    scaleDown:
+      # 縮容策略
+      stabilizationWindowSeconds: 300  # 穩定窗口：5 分鐘
+      policies:
+      - type: Percent
+        value: 50              # 每次最多縮容 50%
+        periodSeconds: 60      # 每 60 秒評估一次
+      - type: Pods
+        value: 2               # 每次最多縮容 2 個 Pod
+        periodSeconds: 60
+      selectPolicy: Min        # 選擇最小值（更保守）
+    
+    scaleUp:
+      # 擴容策略
+      stabilizationWindowSeconds: 0  # 立即擴容
+      policies:
+      - type: Percent
+        value: 100             # 每次最多擴容 100%（翻倍）
+        periodSeconds: 15      # 每 15 秒評估一次
+      - type: Pods
+        value: 4               # 每次最多擴容 4 個 Pod
+        periodSeconds: 15
+      selectPolicy: Max        # 選擇最大值（更激進）
+
+---
+# 基於自定義指標的 HPA（高級）
+# 需要配置 Custom Metrics API 或 External Metrics API
+# 例如：Prometheus Adapter、Datadog、New Relic 等
+
+# apiVersion: autoscaling/v2
+# kind: HorizontalPodAutoscaler
+# metadata:
+#   name: my-app-hpa-custom
+#   namespace: my-app
+# spec:
+#   scaleTargetRef:
+#     apiVersion: apps/v1
+#     kind: Deployment
+#     name: my-app
+#   minReplicas: 2
+#   maxReplicas: 20
+#   metrics:
+#   # 基於請求速率擴展
+#   - type: Pods
+#     pods:
+#       metric:
+#         name: http_requests_per_second
+#       target:
+#         type: AverageValue
+#         averageValue: "1000"  # 每個 Pod 每秒 1000 個請求
+#   
+#   # 基於隊列長度擴展
+#   - type: External
+#     external:
+#       metric:
+#         name: queue_messages_ready
+#         selector:
+#           matchLabels:
+#             queue: my-queue
+#       target:
+#         type: AverageValue
+#         averageValue: "30"  # 每個 Pod 處理 30 個消息
+
+# 測試 HPA：
+# 1. 查看 HPA 狀態
+#    kubectl get hpa -n my-app
+#    kubectl describe hpa my-app-hpa -n my-app
+#
+# 2. 生成負載測試（使用 Apache Bench）
+#    kubectl run -i --tty load-generator --rm --image=busybox --restart=Never -- /bin/sh -c "while sleep 0.01; do wget -q -O- http://my-app.my-app.svc.cluster.local; done"
+#
+# 3. 觀察自動擴展
+#    kubectl get hpa -n my-app --watch
+#    kubectl get pods -n my-app --watch
+#
+# 4. 查看事件
+#    kubectl get events -n my-app --sort-by='.lastTimestamp'
+

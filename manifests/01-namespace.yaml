@@ -1,0 +1,11 @@
+# Namespace - 提供資源隔離和組織
+# 命名空間是 K8s 中的邏輯分組，用於隔離不同環境或團隊的資源
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: my-app
+  labels:
+    environment: development
+    project: k8s-learning
+

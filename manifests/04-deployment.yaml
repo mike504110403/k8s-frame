@@ -1,0 +1,152 @@
+# Deployment - 管理 Pod 的副本，處理滾動更新和回滾
+# 這是部署無狀態應用的標準方式
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-app
+  namespace: my-app
+  labels:
+    app: my-app
+    version: v1
+spec:
+  # 副本數量 - Pod 的實例數
+  replicas: 3
+  
+  # 選擇器 - 用於匹配要管理的 Pod
+  selector:
+    matchLabels:
+      app: my-app
+  
+  # 滾動更新策略
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # 更新時最多可以有多少個額外的 Pod
+      maxSurge: 1
+      # 更新時最多可以有多少個 Pod 不可用
+      maxUnavailable: 0
+  
+  # Pod 模板
+  template:
+    metadata:
+      labels:
+        app: my-app
+        version: v1
+    spec:
+      # 如果使用私有 registry，需要指定 imagePullSecrets
+      # imagePullSecrets:
+      #   - name: my-registry-secret
+      
+      containers:
+      - name: app
+        # 使用 nginx 作為範例（可以替換成你的應用映像）
+        image: nginx:1.25-alpine
+        imagePullPolicy: IfNotPresent
+        
+        # 容器端口
+        ports:
+        - name: http
+          containerPort: 80
+          protocol: TCP
+        
+        # 環境變數 - 從 ConfigMap 載入
+        env:
+        - name: APP_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: my-app-config
+              key: APP_NAME
+        - name: APP_ENV
+          valueFrom:
+            configMapKeyRef:
+              name: my-app-config
+              key: APP_ENV
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: my-app-config
+              key: LOG_LEVEL
+        
+        # 環境變數 - 從 Secret 載入
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: my-app-secret
+              key: DB_PASSWORD
+        - name: API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: my-app-secret
+              key: API_KEY
+        
+        # 資源限制和請求（重要！）
+        resources:
+          requests:
+            # 請求的最小資源（調度時保證）
+            memory: "64Mi"
+            cpu: "100m"
+          limits:
+            # 資源上限（不能超過）
+            memory: "128Mi"
+            cpu: "200m"
+        
+        # 存活探針 - 檢查容器是否正在運行
+        livenessProbe:
+          httpGet:
+            path: /
+            port: http
+          initialDelaySeconds: 10  # 啟動後等待時間
+          periodSeconds: 10         # 檢查間隔
+          timeoutSeconds: 5         # 超時時間
+          failureThreshold: 3       # 失敗次數閾值
+        
+        # 就緒探針 - 檢查容器是否準備好接收流量
+        readinessProbe:
+          httpGet:
+            path: /
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        
+        # 啟動探針 - 用於慢啟動應用
+        startupProbe:
+          httpGet:
+            path: /
+            port: http
+          initialDelaySeconds: 0
+          periodSeconds: 5
+          failureThreshold: 30      # 最多等待 150 秒（5*30）
+        
+        # 掛載 ConfigMap 作為文件
+        volumeMounts:
+        - name: config-volume
+          mountPath: /etc/config
+          readOnly: true
+        - name: secret-volume
+          mountPath: /etc/secrets
+          readOnly: true
+      
+      # 定義卷
+      volumes:
+      - name: config-volume
+        configMap:
+          name: my-app-config
+          items:
+          - key: app.properties
+            path: app.properties
+      - name: secret-volume
+        secret:
+          secretName: my-app-secret-plaintext
+      
+      # 重啟策略
+      restartPolicy: Always
+      
+      # DNS 策略
+      dnsPolicy: ClusterFirst
+      
+      # 終止寬限期（秒）
+      terminationGracePeriodSeconds: 30
+

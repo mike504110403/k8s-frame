@@ -1,0 +1,164 @@
+# Ingress - 管理外部訪問集群內服務的 HTTP/HTTPS 路由
+# 需要先安裝 Ingress Controller（如 nginx-ingress、traefik 等）
+
+# 安裝 Nginx Ingress Controller：
+# kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.8.1/deploy/static/provider/cloud/deploy.yaml
+
+# 對於 Minikube：
+# minikube addons enable ingress
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: my-app-ingress
+  namespace: my-app
+  labels:
+    app: my-app
+  annotations:
+    # Nginx Ingress 註解
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    
+    # 連接超時設置
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "30"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "30"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "30"
+    
+    # 啟用 CORS（跨域資源共享）
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
+spec:
+  # Ingress Class - 指定使用哪個 Ingress Controller
+  ingressClassName: nginx
+  
+  # 路由規則
+  rules:
+  # 基於域名的路由
+  - host: my-app.local
+    http:
+      paths:
+      # 路徑匹配
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: my-app
+            port:
+              number: 80
+  
+  # 多個域名和路徑
+  - host: api.my-app.local
+    http:
+      paths:
+      - path: /v1
+        pathType: Prefix
+        backend:
+          service:
+            name: my-app
+            port:
+              number: 80
+      - path: /v2
+        pathType: Prefix
+        backend:
+          service:
+            name: my-app
+            port:
+              number: 80
+
+---
+# Ingress with TLS/SSL
+# 需要先創建 TLS Secret：
+# kubectl create secret tls my-app-tls \
+#   --cert=path/to/tls.crt \
+#   --key=path/to/tls.key \
+#   --namespace=my-app
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: my-app-ingress-tls
+  namespace: my-app
+  labels:
+    app: my-app
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    # 自動從 HTTP 重定向到 HTTPS
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    
+    # 使用 cert-manager 自動管理證書
+    # cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  ingressClassName: nginx
+  
+  # TLS 配置
+  tls:
+  - hosts:
+    - my-app.local
+    - api.my-app.local
+    secretName: my-app-tls  # TLS Secret 名稱
+  
+  rules:
+  - host: my-app.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: my-app
+            port:
+              number: 80
+
+---
+# 高級路由範例 - 基於路徑的多服務路由
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: my-app-ingress-advanced
+  namespace: my-app
+  labels:
+    app: my-app
+  annotations:
+    # URL 重寫
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    # 限流
+    nginx.ingress.kubernetes.io/limit-rps: "10"
+    # 設置請求體大小限制
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: my-app.local
+    http:
+      paths:
+      # 前端應用
+      - path: /()(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: my-app
+            port:
+              number: 80
+      
+      # API 服務
+      - path: /api(/|$)(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: my-app
+            port:
+              number: 80
+
+# 測試 Ingress：
+# 1. 添加到 /etc/hosts：
+#    127.0.0.1 my-app.local api.my-app.local
+#
+# 2. 如果使用 Minikube，獲取 IP：
+#    minikube ip
+#    然後添加：<minikube-ip> my-app.local api.my-app.local
+#
+# 3. 訪問：
+#    curl http://my-app.local
+#    curl http://api.my-app.local/v1
+

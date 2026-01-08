@@ -1,0 +1,329 @@
+# Node.js 範例應用 - 簡單的 API 服務
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nodejs-example
+  labels:
+    app: nodejs-example
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nodejs-config
+  namespace: nodejs-example
+data:
+  PORT: "3000"
+  NODE_ENV: "production"
+  APP_NAME: "Kubernetes Node.js App"
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: nodejs-secret
+  namespace: nodejs-example
+type: Opaque
+stringData:
+  API_SECRET: "my-super-secret-key-12345"
+  DB_CONNECTION: "mongodb://mongo:27017/mydb"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nodejs-app
+  namespace: nodejs-example
+  labels:
+    app: nodejs-app
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: nodejs-app
+  template:
+    metadata:
+      labels:
+        app: nodejs-app
+    spec:
+      containers:
+      - name: nodejs
+        # 使用官方 Node.js 映像運行簡單的 Express 服務
+        image: node:18-alpine
+        command: ["/bin/sh"]
+        args:
+          - -c
+          - |
+            cat > /app/server.js << 'EOF'
+            const http = require('http');
+            const os = require('os');
+            
+            const PORT = process.env.PORT || 3000;
+            const APP_NAME = process.env.APP_NAME || 'Node.js App';
+            
+            const server = http.createServer((req, res) => {
+              const hostname = os.hostname();
+              const uptime = process.uptime();
+              
+              if (req.url === '/health') {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ status: 'healthy', hostname }));
+                return;
+              }
+              
+              if (req.url === '/api/info') {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({
+                  app: APP_NAME,
+                  hostname: hostname,
+                  uptime: Math.floor(uptime) + 's',
+                  nodeVersion: process.version,
+                  platform: process.platform,
+                  memory: {
+                    used: Math.round(process.memoryUsage().heapUsed / 1024 / 1024) + 'MB',
+                    total: Math.round(process.memoryUsage().heapTotal / 1024 / 1024) + 'MB'
+                  }
+                }));
+                return;
+              }
+              
+              res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+              res.end(`
+                <!DOCTYPE html>
+                <html lang="zh-TW">
+                <head>
+                  <meta charset="UTF-8">
+                  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                  <title>${APP_NAME}</title>
+                  <style>
+                    body {
+                      font-family: 'Segoe UI', system-ui, sans-serif;
+                      margin: 0;
+                      padding: 40px;
+                      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                      color: white;
+                      min-height: 100vh;
+                    }
+                    .container {
+                      max-width: 800px;
+                      margin: 0 auto;
+                      background: rgba(255,255,255,0.1);
+                      padding: 40px;
+                      border-radius: 20px;
+                      backdrop-filter: blur(10px);
+                      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+                    }
+                    h1 { font-size: 2.5em; margin-bottom: 10px; }
+                    .info-box {
+                      background: rgba(255,255,255,0.1);
+                      padding: 20px;
+                      border-radius: 10px;
+                      margin: 20px 0;
+                    }
+                    .info-item { margin: 10px 0; }
+                    .label { font-weight: bold; color: #ffd700; }
+                    button {
+                      background: #ffd700;
+                      color: #333;
+                      border: none;
+                      padding: 12px 24px;
+                      font-size: 16px;
+                      border-radius: 5px;
+                      cursor: pointer;
+                      margin: 10px 5px;
+                    }
+                    button:hover { background: #ffed4e; }
+                    #result {
+                      margin-top: 20px;
+                      padding: 15px;
+                      background: rgba(0,0,0,0.2);
+                      border-radius: 5px;
+                      font-family: monospace;
+                      white-space: pre-wrap;
+                    }
+                  </style>
+                </head>
+                <body>
+                  <div class="container">
+                    <h1>🚀 ${APP_NAME}</h1>
+                    <p>運行在 Kubernetes 上的 Node.js 服務</p>
+                    
+                    <div class="info-box">
+                      <div class="info-item"><span class="label">Pod 名稱：</span>${hostname}</div>
+                      <div class="info-item"><span class="label">運行時間：</span>${Math.floor(uptime)}秒</div>
+                      <div class="info-item"><span class="label">Node.js 版本：</span>${process.version}</div>
+                    </div>
+                    
+                    <div>
+                      <button onclick="loadInfo()">獲取詳細信息</button>
+                      <button onclick="testLoadBalancing()">測試負載均衡</button>
+                    </div>
+                    
+                    <div id="result"></div>
+                  </div>
+                  
+                  <script>
+                    async function loadInfo() {
+                      const res = await fetch('/api/info');
+                      const data = await res.json();
+                      document.getElementById('result').textContent = JSON.stringify(data, null, 2);
+                    }
+                    
+                    async function testLoadBalancing() {
+                      const result = document.getElementById('result');
+                      result.textContent = '測試中...\\n';
+                      const pods = new Set();
+                      
+                      for (let i = 0; i < 10; i++) {
+                        const res = await fetch('/api/info');
+                        const data = await res.json();
+                        pods.add(data.hostname);
+                        result.textContent += \`請求 \${i+1}: Pod \${data.hostname}\\n\`;
+                        await new Promise(r => setTimeout(r, 200));
+                      }
+                      
+                      result.textContent += \`\\n訪問了 \${pods.size} 個不同的 Pod\\n\`;
+                      result.textContent += \`Pod 列表: \${Array.from(pods).join(', ')}\`;
+                    }
+                  </script>
+                </body>
+                </html>
+              `);
+            });
+            
+            server.listen(PORT, '0.0.0.0', () => {
+              console.log(\`✅ \${APP_NAME} 運行在端口 \${PORT}\`);
+              console.log(\`📦 Pod: \${os.hostname()}\`);
+            });
+            EOF
+            
+            node /app/server.js
+        ports:
+        - name: http
+          containerPort: 3000
+        env:
+        - name: PORT
+          valueFrom:
+            configMapKeyRef:
+              name: nodejs-config
+              key: PORT
+        - name: NODE_ENV
+          valueFrom:
+            configMapKeyRef:
+              name: nodejs-config
+              key: NODE_ENV
+        - name: APP_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: nodejs-config
+              key: APP_NAME
+        - name: API_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: nodejs-secret
+              key: API_SECRET
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "100m"
+          limits:
+            memory: "128Mi"
+            cpu: "200m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 5
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nodejs-app
+  namespace: nodejs-example
+  labels:
+    app: nodejs-app
+spec:
+  type: ClusterIP
+  selector:
+    app: nodejs-app
+  ports:
+  - name: http
+    port: 80
+    targetPort: http
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nodejs-app-nodeport
+  namespace: nodejs-example
+  labels:
+    app: nodejs-app
+spec:
+  type: NodePort
+  selector:
+    app: nodejs-app
+  ports:
+  - name: http
+    port: 80
+    targetPort: http
+    nodePort: 30082
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: nodejs-app
+  namespace: nodejs-example
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: nodejs.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: nodejs-app
+            port:
+              number: 80
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: nodejs-app-hpa
+  namespace: nodejs-example
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: nodejs-app
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+

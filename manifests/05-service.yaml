@@ -1,0 +1,93 @@
+# Service - 為 Pod 提供穩定的網絡端點和負載均衡
+
+# ClusterIP Service - 只能在集群內部訪問（默認類型）
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-app
+  namespace: my-app
+  labels:
+    app: my-app
+spec:
+  type: ClusterIP
+  
+  # 選擇器 - 將流量路由到匹配的 Pod
+  selector:
+    app: my-app
+  
+  # 端口配置
+  ports:
+  - name: http
+    protocol: TCP
+    port: 80           # Service 對外端口
+    targetPort: http   # Pod 的目標端口（對應 Deployment 中的 containerPort）
+  
+  # Session Affinity - 會話親和性
+  # 設置為 ClientIP 可以確保來自同一客戶端的請求路由到同一個 Pod
+  sessionAffinity: None
+
+---
+# NodePort Service - 可以通過節點 IP:NodePort 從外部訪問
+# 適合開發和測試環境
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-app-nodeport
+  namespace: my-app
+  labels:
+    app: my-app
+spec:
+  type: NodePort
+  selector:
+    app: my-app
+  ports:
+  - name: http
+    protocol: TCP
+    port: 80
+    targetPort: http
+    # NodePort 範圍：30000-32767
+    # 如果不指定，會自動分配
+    nodePort: 30080
+
+---
+# LoadBalancer Service - 創建外部負載均衡器（雲環境）
+# 在雲提供商（AWS、GCP、Azure）上會自動創建外部 LB
+# 在本地環境（minikube、kind）可能需要額外配置
+# apiVersion: v1
+# kind: Service
+# metadata:
+#   name: my-app-loadbalancer
+#   namespace: my-app
+#   labels:
+#     app: my-app
+# spec:
+#   type: LoadBalancer
+#   selector:
+#     app: my-app
+#   ports:
+#   - name: http
+#     protocol: TCP
+#     port: 80
+#     targetPort: http
+
+---
+# Headless Service - 不分配 ClusterIP，直接返回 Pod IP
+# 用於有狀態應用或需要直接訪問 Pod 的場景
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-app-headless
+  namespace: my-app
+  labels:
+    app: my-app
+spec:
+  type: ClusterIP
+  clusterIP: None  # 設置為 None 創建 Headless Service
+  selector:
+    app: my-app
+  ports:
+  - name: http
+    protocol: TCP
+    port: 80
+    targetPort: http
+
